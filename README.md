@@ -35,7 +35,8 @@ user@nash:/home/user/projects$ pwd
 
 ## Features
 
-- **Bash-like syntax** — pipes, redirections, `&&`, `||`, `;`, subshells, quoting, `$VAR`, `$(cmd)`
+- **Bash-like syntax** — pipes, redirections, `&&`, `||`, `;`, subshells, quoting, `$VAR`, `$(cmd)`, `if`/`elif`/`else`
+- **Multi-line scripting** — full support for block statements and line buffering
 - **Full sandbox** — zero `std::process::Command` calls, no OS shell ever spawned
 - **In-memory VFS** — realistic Unix directory tree scaffolded at boot
 - **Host mounts** — bind real directories read-write or read-only via `--bind`
@@ -278,6 +279,15 @@ echo start ; echo end
 
 # Subshell (isolated environment — env changes don't escape)
 (cd /tmp && ls)
+
+# Control Flow (If / Elif / Else)
+if test -f config.json; then
+    echo "Config found!"
+elif test -d config.d; then
+    echo "Config directory found!"
+else
+    echo "No config!"
+fi
 
 # Variable expansion
 echo $HOME

@@ -469,6 +469,7 @@ fn run_vfs_script(executor: &mut Executor, vfs_path: &str, opts: &ShellOpts) -> 
         Ok(c) => c,
         Err(_) => return Ok(()),
     };
+    let mut buffer = CommandBuffer::new();
     for (lineno, line) in content.lines().enumerate() {
         if lineno == 0 && line.starts_with("#!") {
             continue;
@@ -476,14 +477,100 @@ fn run_vfs_script(executor: &mut Executor, vfs_path: &str, opts: &ShellOpts) -> 
         if opts.verbose {
             eprintln!("{}", line);
         }
-        run_line_opts(executor, line, opts)?;
+        buffer.push(line);
+        buffer.try_execute(executor, opts)?;
+    }
+    // Handle EOF with unclosed command
+    if !buffer.is_empty() {
+        eprintln!("nash: unexpected EOF while looking for matching token");
     }
     Ok(())
 }
 
 // ─── Execution primitives ──────────────────────────────────────────────────────
 
-/// Execute one line, honouring shell option flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NeedsMore {
+    Yes,
+    No,
+}
+
+struct CommandBuffer {
+    buffer: String,
+}
+
+impl CommandBuffer {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+        }
+    }
+
+    fn push(&mut self, line: &str) {
+        self.buffer.push_str(line);
+        self.buffer.push('\n');
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buffer.trim().is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
+    /// Returns `Ok(NeedsMore::Yes)` if the parser needs more lines (e.g. unclosed quote or block).
+    /// Returns `Ok(NeedsMore::No)` if the command was executed (success or fail) or was empty.
+    fn try_execute(&mut self, executor: &mut Executor, opts: &ShellOpts) -> Result<NeedsMore> {
+        let trimmed = self.buffer.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            self.clear();
+            return Ok(NeedsMore::No);
+        }
+
+        match crate::parser::parse(&self.buffer) {
+            Ok(expr) => {
+                executor.push_history(trimmed.to_string());
+                if opts.xtrace {
+                    eprintln!("+ {}", trimmed);
+                }
+                let output = executor.execute(&expr)?;
+                if !output.stdout.is_empty() {
+                    print!("{}", output.stdout);
+                }
+                if !output.stderr.is_empty() {
+                    eprint!("{}", output.stderr);
+                }
+                self.clear();
+
+                if opts.errexit && !output.is_success() {
+                    bail!("errexit: command exited with status {}", output.exit_code);
+                }
+                Ok(NeedsMore::No)
+            }
+            Err(crate::parser::ParseError::UnexpectedEof)
+            | Err(crate::parser::ParseError::Unmatched(_))
+            | Err(crate::parser::ParseError::UnmatchedString(_)) => {
+                // Need more input
+                Ok(NeedsMore::Yes)
+            }
+            Err(crate::parser::ParseError::EmptyCommand) => {
+                self.clear();
+                Ok(NeedsMore::No)
+            }
+            Err(e) => {
+                eprintln!("nash: parse error: {e}");
+                self.clear();
+                if opts.errexit {
+                    bail!("errexit: parse error");
+                }
+                Ok(NeedsMore::No)
+            }
+        }
+    }
+}
+
+/// Execute a single command string completely (e.g. `nash -c "cmd"`).
 pub fn run_line_opts(executor: &mut Executor, line: &str, opts: &ShellOpts) -> Result<()> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -491,34 +578,13 @@ pub fn run_line_opts(executor: &mut Executor, line: &str, opts: &ShellOpts) -> R
     }
 
     if opts.verbose {
-        eprintln!("{}", trimmed);
+        eprintln!("{}", line);
     }
-
-    executor.push_history(trimmed.to_string());
-
-    match parse(trimmed) {
-        Ok(expr) => {
-            if opts.xtrace {
-                eprintln!("+ {}", trimmed);
-            }
-            let output = executor.execute(&expr)?;
-            if !output.stdout.is_empty() {
-                print!("{}", output.stdout);
-            }
-            if !output.stderr.is_empty() {
-                eprint!("{}", output.stderr);
-            }
-
-            if opts.errexit && !output.is_success() {
-                bail!("errexit: command exited with status {}", output.exit_code);
-            }
-        }
-        Err(e) => {
-            eprintln!("nash: parse error: {e}");
-            if opts.errexit {
-                bail!("errexit: parse error");
-            }
-        }
+    let mut buffer = CommandBuffer::new();
+    buffer.push(line);
+    let needs_more = buffer.try_execute(executor, opts)?;
+    if needs_more == NeedsMore::Yes {
+        eprintln!("nash: unexpected EOF while looking for matching token");
     }
     Ok(())
 }
@@ -527,15 +593,23 @@ pub fn run_line_opts(executor: &mut Executor, line: &str, opts: &ShellOpts) -> R
 fn run_stdin(executor: &mut Executor, opts: &ShellOpts) -> Result<()> {
     let stdin = io::stdin();
     let mut line_no = 0usize;
+    let mut buffer = CommandBuffer::new();
     for line_result in stdin.lock().lines() {
         line_no += 1;
         let line = line_result.with_context(|| format!("stdin read error on line {}", line_no))?;
-        if let Err(e) = run_line_opts(executor, &line, opts) {
+        if opts.verbose {
+            eprintln!("{}", line);
+        }
+        buffer.push(&line);
+        if let Err(e) = buffer.try_execute(executor, opts) {
             if opts.errexit {
                 return Err(e);
             }
             eprintln!("nash: {e}");
         }
+    }
+    if !buffer.is_empty() {
+        eprintln!("nash: unexpected EOF while looking for matching token");
     }
     Ok(())
 }
@@ -555,18 +629,26 @@ fn run_script(executor: &mut Executor, path: &str, opts: &ShellOpts) -> Result<(
     let reader = io::BufReader::new(file);
 
     let mut line_no = 0usize;
+    let mut buffer = CommandBuffer::new();
     for line_result in reader.lines() {
         line_no += 1;
         let line = line_result.with_context(|| format!("read error at {}:{}", path, line_no))?;
         if line_no == 1 && line.starts_with("#!") {
             continue;
         }
-        if let Err(e) = run_line_opts(executor, &line, opts) {
+        if opts.verbose {
+            eprintln!("{}", line);
+        }
+        buffer.push(&line);
+        if let Err(e) = buffer.try_execute(executor, opts) {
             if opts.errexit {
                 return Err(e);
             }
             eprintln!("nash: {}:{}: {}", path, line_no, e);
         }
+    }
+    if !buffer.is_empty() {
+        eprintln!("nash: unexpected EOF while looking for matching token in script {}", path);
     }
     Ok(())
 }
@@ -581,29 +663,59 @@ fn run_repl(executor: &mut Executor, username: &str, opts: &ShellOpts) -> Result
 );
     println!();
 
+    let mut buffer = CommandBuffer::new();
     loop {
         let cwd = executor.cwd().to_string();
         let sigil = if username == "root" { "#" } else { "$" };
-        // \x01 / \x02 = RL_PROMPT_START/END_IGNORE so rustyline counts width correctly.
-        let prompt = format!("{}@nash:{}{} ", username, cwd, sigil);
+        
+        let prompt = if buffer.is_empty() {
+            format!("{}@nash:{}{} ", username, cwd, sigil)
+        } else {
+            "> ".to_string()
+        };
 
         match rl.readline(&prompt) {
             Ok(line) => {
                 let _ = rl.add_history_entry(&line);
                 let trimmed = line.trim();
-                if trimmed == "exit" || trimmed == "quit" {
+                
+                // Allow exiting if buffer is empty
+                if buffer.is_empty() && (trimmed == "exit" || trimmed == "quit") {
                     println!("logout");
                     break;
                 }
-                if let Err(e) = run_line_opts(executor, trimmed, opts) {
-                    eprintln!("nash: {e}");
+
+                if opts.verbose {
+                    eprintln!("{}", line); // show typed line if -v
                 }
-                executor.sync_pwd();
+
+                buffer.push(&line);
+                
+                match buffer.try_execute(executor, opts) {
+                    Ok(needs_more) => {
+                        // if false, it was processed, so we can sync pwd
+                        if needs_more == NeedsMore::No {
+                            executor.sync_pwd();
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("nash: {e}");
+                        executor.sync_pwd(); // sync anyway
+                    }
+                }
             }
-            Err(ReadlineError::Interrupted) => println!("^C"),
+            Err(ReadlineError::Interrupted) => {
+                println!("^C");
+                buffer.clear();
+            }
             Err(ReadlineError::Eof) => {
-                println!("\nlogout");
-                break;
+                if !buffer.is_empty() {
+                    println!("nash: unexpected EOF while looking for matching token");
+                    buffer.clear();
+                } else {
+                    println!("\nlogout");
+                    break;
+                }
             }
             Err(e) => {
                 eprintln!("nash: readline error: {e}");

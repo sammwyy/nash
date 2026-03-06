@@ -62,6 +62,11 @@ impl<'a> Lexer<'a> {
             }
 
             let tok = match ch {
+                '\n' => {
+                    self.advance();
+                    // Newline acts as a command separator
+                    Token::Semi
+                }
                 '|' => {
                     self.advance();
                     if self.current_char() == '|' {
@@ -134,7 +139,7 @@ impl<'a> Lexer<'a> {
     fn skip_whitespace(&mut self) {
         while self.pos < self.src.len() {
             let ch = self.current_char();
-            if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
+            if ch == ' ' || ch == '\t' || ch == '\r' {
                 self.advance();
             } else {
                 break;
