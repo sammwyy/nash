@@ -489,6 +489,12 @@ fn run_vfs_script(executor: &mut Executor, vfs_path: &str, opts: &ShellOpts) -> 
 
 // ─── Execution primitives ──────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NeedsMore {
+    Yes,
+    No,
+}
+
 struct CommandBuffer {
     buffer: String,
 }
@@ -513,13 +519,13 @@ impl CommandBuffer {
         self.buffer.clear();
     }
 
-    /// Returns `Ok(true)` if the parser needs more lines (e.g. unclosed quote or block).
-    /// Returns `Ok(false)` if the command was executed (success or fail) or was empty.
-    fn try_execute(&mut self, executor: &mut Executor, opts: &ShellOpts) -> Result<bool> {
+    /// Returns `Ok(NeedsMore::Yes)` if the parser needs more lines (e.g. unclosed quote or block).
+    /// Returns `Ok(NeedsMore::No)` if the command was executed (success or fail) or was empty.
+    fn try_execute(&mut self, executor: &mut Executor, opts: &ShellOpts) -> Result<NeedsMore> {
         let trimmed = self.buffer.trim();
-        if trimmed.is_empty() || self.buffer.starts_with('#') {
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             self.clear();
-            return Ok(false);
+            return Ok(NeedsMore::No);
         }
 
         match crate::parser::parse(&self.buffer) {
@@ -540,17 +546,17 @@ impl CommandBuffer {
                 if opts.errexit && !output.is_success() {
                     bail!("errexit: command exited with status {}", output.exit_code);
                 }
-                Ok(false)
+                Ok(NeedsMore::No)
             }
             Err(crate::parser::ParseError::UnexpectedEof)
             | Err(crate::parser::ParseError::Unmatched(_))
             | Err(crate::parser::ParseError::UnmatchedString(_)) => {
                 // Need more input
-                Ok(true)
+                Ok(NeedsMore::Yes)
             }
             Err(crate::parser::ParseError::EmptyCommand) => {
                 self.clear();
-                Ok(false)
+                Ok(NeedsMore::No)
             }
             Err(e) => {
                 eprintln!("nash: parse error: {e}");
@@ -558,7 +564,7 @@ impl CommandBuffer {
                 if opts.errexit {
                     bail!("errexit: parse error");
                 }
-                Ok(false)
+                Ok(NeedsMore::No)
             }
         }
     }
@@ -566,13 +572,18 @@ impl CommandBuffer {
 
 /// Execute a single command string completely (e.g. `nash -c "cmd"`).
 pub fn run_line_opts(executor: &mut Executor, line: &str, opts: &ShellOpts) -> Result<()> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return Ok(());
+    }
+
     if opts.verbose {
         eprintln!("{}", line);
     }
     let mut buffer = CommandBuffer::new();
     buffer.push(line);
     let needs_more = buffer.try_execute(executor, opts)?;
-    if needs_more {
+    if needs_more == NeedsMore::Yes {
         eprintln!("nash: unexpected EOF while looking for matching token");
     }
     Ok(())
@@ -683,7 +694,7 @@ fn run_repl(executor: &mut Executor, username: &str, opts: &ShellOpts) -> Result
                 match buffer.try_execute(executor, opts) {
                     Ok(needs_more) => {
                         // if false, it was processed, so we can sync pwd
-                        if !needs_more {
+                        if needs_more == NeedsMore::No {
                             executor.sync_pwd();
                         }
                     }

@@ -21,6 +21,8 @@ pub enum ParseError {
     UnexpectedEof,
     #[error("unmatched '{0}'")]
     Unmatched(char),
+    #[error("expected '{0}'")]
+    Expected(&'static str),
     #[error("unmatched {0}")]
     UnmatchedString(String),
     #[error("empty command")]
@@ -77,6 +79,9 @@ impl Parser {
         }
     }
 
+    /// Peek the next token and return it as a keyword if it is a simple unquoted literal.
+    /// Multi-part or compound words (like `'t'"hen"`, `if$VAR` or `$VAR`) are cleanly 
+    /// ignored and will yield `None`.
     fn peek_keyword(&self) -> Option<&str> {
         if let Token::Word(w) = self.peek() {
             if w.0.len() == 1 {
@@ -246,7 +251,7 @@ impl Parser {
 
         self.skip_semis();
         if self.peek_keyword() != Some("then") {
-            return Err(ParseError::UnmatchedString("then".to_string()));
+            return Err(ParseError::Expected("then"));
         }
         self.advance(); // consume "then"
         self.skip_semis();
@@ -266,7 +271,7 @@ impl Parser {
                     let elif_cond = self.parse_list()?;
                     self.skip_semis();
                     if self.peek_keyword() != Some("then") {
-                        return Err(ParseError::UnmatchedString("then".to_string()));
+                        return Err(ParseError::Expected("then"));
                     }
                     self.advance();
                     self.skip_semis();
@@ -281,12 +286,12 @@ impl Parser {
                     break;
                 }
                 Some("fi") => break,
-                _ => return Err(ParseError::UnmatchedString("fi".to_string())),
+                _ => return Err(ParseError::Expected("fi")),
             }
         }
 
         if self.peek_keyword() != Some("fi") {
-            return Err(ParseError::UnmatchedString("fi".to_string()));
+            return Err(ParseError::Expected("fi"));
         }
         self.advance(); // consume "fi"
 

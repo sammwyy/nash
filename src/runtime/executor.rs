@@ -214,38 +214,55 @@ impl Executor {
                 elifs,
                 else_branch,
             } => {
+                let mut out_stdout = String::new();
+                let mut out_stderr = String::new();
+
                 let cond_out = self.eval(condition, stdin)?;
-                if !cond_out.stdout.is_empty() {
-                    print!("{}", cond_out.stdout);
-                }
-                if !cond_out.stderr.is_empty() {
-                    eprint!("{}", cond_out.stderr);
-                }
+                out_stdout.push_str(&cond_out.stdout);
+                out_stderr.push_str(&cond_out.stderr);
 
                 if cond_out.is_success() {
-                    return self.eval(then_branch, stdin);
+                    let branch_out = self.eval(then_branch, stdin)?;
+                    out_stdout.push_str(&branch_out.stdout);
+                    out_stderr.push_str(&branch_out.stderr);
+                    return Ok(Output {
+                        stdout: out_stdout,
+                        stderr: out_stderr,
+                        exit_code: branch_out.exit_code,
+                    });
                 }
 
                 for (elif_cond, elif_body) in elifs {
                     let elif_out = self.eval(elif_cond, stdin)?;
-                    if !elif_out.stdout.is_empty() {
-                        print!("{}", elif_out.stdout);
-                    }
-                    if !elif_out.stderr.is_empty() {
-                        eprint!("{}", elif_out.stderr);
-                    }
+                    out_stdout.push_str(&elif_out.stdout);
+                    out_stderr.push_str(&elif_out.stderr);
+
                     if elif_out.is_success() {
-                        return self.eval(elif_body, stdin);
+                        let branch_out = self.eval(elif_body, stdin)?;
+                        out_stdout.push_str(&branch_out.stdout);
+                        out_stderr.push_str(&branch_out.stderr);
+                        return Ok(Output {
+                            stdout: out_stdout,
+                            stderr: out_stderr,
+                            exit_code: branch_out.exit_code,
+                        });
                     }
                 }
 
                 if let Some(else_b) = else_branch {
-                    return self.eval(else_b, stdin);
+                    let else_out = self.eval(else_b, stdin)?;
+                    out_stdout.push_str(&else_out.stdout);
+                    out_stderr.push_str(&else_out.stderr);
+                    return Ok(Output {
+                        stdout: out_stdout,
+                        stderr: out_stderr,
+                        exit_code: else_out.exit_code,
+                    });
                 }
 
                 Ok(Output {
-                    stdout: String::new(),
-                    stderr: String::new(),
+                    stdout: out_stdout,
+                    stderr: out_stderr,
                     exit_code: 0,
                 })
             }
