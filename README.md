@@ -203,6 +203,7 @@ NASH FLAGS
     -U, --user NAME        Session username
     -C, --cwd PATH         Starting directory
     -E, --env KEY=VALUE    Set environment variable
+    -w, --workspace        Mount current directory at /home/<user>/workspace
     -B, --bind HOST:VFS    Mount host directory
         --bind-ro HOST:VFS Mount read-only directory
 
