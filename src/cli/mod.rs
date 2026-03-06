@@ -45,6 +45,7 @@ NASH FLAGS:
     -U / --user NAME        Set session username        [default: user]
     -C / --cwd PATH         Override start directory    [default: /home/<user>]
     -w / --workspace        Map host CWD to /home/<user>/workspace
+    -A / --allow NAME:PATH  Allow host binary NAME from PATH (repeatable)
     -E / --env KEY=VALUE    Set env var (repeatable)
     -B / --bind HOST:VFS    Mount host dir read-write (repeatable)
          --bind-ro HOST:VFS Mount host dir read-only (repeatable)
@@ -171,6 +172,15 @@ pub struct NashCli {
         help = "Set env var KEY=VALUE (repeatable)"
     )]
     pub env_vars: Vec<String>,
+
+    /// Allow execution of a host binary (NAME:HOST_PATH). Repeatable.
+    #[arg(
+        short = 'A',
+        long = "allow",
+        value_name = "NAME:PATH",
+        help = "Allow host binary NAME at host PATH (repeatable)"
+    )]
+    pub allow_bins: Vec<String>,
 
     /// Bind a host directory into the VFS read-write (HOST:VFS). Repeatable.
     #[arg(
@@ -323,6 +333,16 @@ impl NashCli {
                 .split_once('=')
                 .with_context(|| format!("invalid -E value '{}' — expected KEY=VALUE", kv))?;
             config.env.insert(k.to_string(), v.to_string());
+        }
+
+        // ── Host binary allowlist ────────────────────────────────────────────
+        for item in &self.allow_bins {
+            let (name, path) = item.split_once(':').with_context(|| {
+                format!("invalid --allow value '{}' — expected NAME:PATH", item)
+            })?;
+            config
+                .allowed_bins
+                .insert(name.to_string(), path.to_string());
         }
 
         // ── Host mounts ──────────────────────────────────────────────────────

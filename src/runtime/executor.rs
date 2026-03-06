@@ -21,6 +21,8 @@ pub struct ExecutorConfig {
     pub env: IndexMap<String, String>,
     /// Host directory mounts: (host_path, vfs_path, opts).
     pub mounts: Vec<(String, String, MountOptions)>,
+    /// Host binaries that are allowed to be executed: (name, host_path).
+    pub allowed_bins: IndexMap<String, String>,
 }
 
 /// The sandboxed executor.
@@ -112,7 +114,7 @@ impl Executor {
         env.entry("SHLVL".into()).or_insert_with(|| "1".into());
 
         Ok(Executor {
-            ctx: Context::new(cwd, env, vfs),
+            ctx: Context::new(cwd, env, vfs, config.allowed_bins),
         })
     }
 
@@ -198,9 +200,11 @@ impl Executor {
                 // Subshell: run in a cloned context (env changes don't propagate back)
                 let saved_cwd = self.ctx.cwd.clone();
                 let saved_env = self.ctx.env.clone();
+                let saved_allowed = self.ctx.allowed_bins.clone();
                 let result = self.eval(expr, stdin);
                 self.ctx.cwd = saved_cwd;
                 self.ctx.env = saved_env;
+                self.ctx.allowed_bins = saved_allowed;
                 result
             }
         }
@@ -215,6 +219,8 @@ impl Executor {
 
         if let Some(builtin) = builtins::dispatch(&name_str) {
             builtin.run(&arg_strs, &mut self.ctx, stdin)
+        } else if let Some(real_path) = self.ctx.allowed_bins.get(&name_str).cloned() {
+            self.eval_external(&real_path, &arg_strs, stdin)
         } else {
             Ok(Output::error(
                 127,
@@ -222,6 +228,32 @@ impl Executor {
                 &format!("nash: command not found: {}\n", name_str),
             ))
         }
+    }
+
+    fn eval_external(&mut self, path: &str, args: &[String], stdin: &str) -> Result<Output> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new(path)
+            .args(args)
+            .envs(&self.ctx.env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        if let Some(mut child_stdin) = child.stdin.take() {
+            child_stdin.write_all(stdin.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        let exit_code = output.status.code().unwrap_or(1);
+
+        Ok(Output {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code,
+        })
     }
 
     fn eval_redirect(

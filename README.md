@@ -206,6 +206,7 @@ NASH FLAGS
     -w, --workspace        Mount current directory at /home/<user>/workspace
     -B, --bind HOST:VFS    Mount host directory
         --bind-ro HOST:VFS Mount read-only directory
+    -A, --allow BIN:HOST_PATH Mount allowed host binary
 
 OPTIONS
         --rcfile FILE

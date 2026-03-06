@@ -12,7 +12,7 @@ const BUILTINS: &[&str] = &[
 pub struct Which;
 
 impl Builtin for Which {
-    fn run(&self, args: &[String], _ctx: &mut Context, _stdin: &str) -> Result<Output> {
+    fn run(&self, args: &[String], ctx: &mut Context, _stdin: &str) -> Result<Output> {
         if args.is_empty() {
             return Ok(Output::error(1, "", "which: missing argument\n"));
         }
@@ -23,6 +23,8 @@ impl Builtin for Which {
         for name in args {
             if BUILTINS.contains(&name.as_str()) {
                 out.push_str(&format!("{} (nash builtin)\n", name));
+            } else if let Some(path) = ctx.allowed_bins.get(name) {
+                out.push_str(&format!("{} (allowed host binary: {})\n", name, path));
             } else {
                 out.push_str(&format!("{}: not found\n", name));
                 exit_code = 1;
