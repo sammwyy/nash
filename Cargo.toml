@@ -1,0 +1,29 @@
+[package]
+name = "nash"
+version = "0.1.0"
+edition = "2021"
+description = "Nash - Not A Shell: A sandboxed bash-like command interpreter"
+authors = ["Sammwy"]
+readme = "README.md"
+
+[[bin]]
+name = "nash"
+path = "src/main.rs"
+
+[dependencies]
+# REPL / terminal handling
+rustyline = "14.0"
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+# CLI argument parsing
+clap = { version = "4.0", features = ["derive"] }
+# Ordered maps for env vars
+indexmap = "2.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true
