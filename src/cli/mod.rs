@@ -25,6 +25,7 @@ EXAMPLES:
     nash -c 'echo hello | grep hi'    One-shot command  (-c like bash/sh)
     nash -E FOO=bar -E X=1            Set environment variables
     nash -B ./proj:/proj -C /proj     Mount + start inside it
+    nash -w                           Map host CWD to /home/<user>/workspace
     nash -s < commands.txt            Read commands from stdin
     nash -x script.sh                 Run script with xtrace (prints each cmd)
     nash -e script.sh                 Exit immediately on any error
@@ -43,6 +44,7 @@ SHELL FLAGS  (bash/sh compatible):
 NASH FLAGS:
     -U / --user NAME        Set session username        [default: user]
     -C / --cwd PATH         Override start directory    [default: /home/<user>]
+    -w / --workspace        Map host CWD to /home/<user>/workspace
     -E / --env KEY=VALUE    Set env var (repeatable)
     -B / --bind HOST:VFS    Mount host dir read-write (repeatable)
          --bind-ro HOST:VFS Mount host dir read-only (repeatable)
@@ -150,6 +152,15 @@ pub struct NashCli {
     )]
     pub cwd: Option<String>,
 
+    /// Map the current host directory to /home/<user>/workspace inside the VFS.
+    /// If no starting directory (-C) is provided, it starts in this workspace.
+    #[arg(
+        short = 'w',
+        long = "workspace",
+        help = "Map host CWD to /home/<user>/workspace inside the VFS"
+    )]
+    pub workspace: bool,
+
     /// Set an environment variable inside Nash (KEY=VALUE). Repeatable.
     ///
     ///   nash -E FOO=bar -E BAZ=qux
@@ -256,12 +267,32 @@ impl NashCli {
             verbose: self.verbose,
         };
 
-        // Resolve home dir and starting cwd
         let home_dir = format!("/home/{}", username);
-        let cwd = self.cwd.clone().unwrap_or_else(|| home_dir.clone());
 
         // Build executor config
         let mut config = ExecutorConfig::default();
+
+        // ── Workspace mapping ────────────────────────────────────────────────
+        let mut workspace_path = None;
+        if self.workspace {
+            let host_cwd = std::env::current_dir()?.to_string_lossy().to_string();
+            let vfs_workspace = format!("{}/workspace", home_dir);
+            config.mounts.push((
+                host_cwd,
+                vfs_workspace.clone(),
+                MountOptions { read_only: false },
+            ));
+            workspace_path = Some(vfs_workspace);
+        }
+
+        // Resolve starting cwd
+        let cwd = if let Some(explicit_cwd) = self.cwd.clone() {
+            explicit_cwd
+        } else if let Some(ws) = workspace_path {
+            ws
+        } else {
+            home_dir.clone()
+        };
         config.cwd = cwd.clone();
 
         // ── Baseline Unix environment ────────────────────────────────────────
