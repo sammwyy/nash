@@ -21,6 +21,8 @@ pub enum ParseError {
     UnexpectedEof,
     #[error("unmatched '{0}'")]
     Unmatched(char),
+    #[error("unmatched {0}")]
+    UnmatchedString(String),
     #[error("empty command")]
     EmptyCommand,
 }
@@ -31,7 +33,12 @@ pub type ParseResult<T> = Result<T, ParseError>;
 pub fn parse(input: &str) -> ParseResult<Expr> {
     let tokens = Lexer::new(input).tokenize()?;
     let mut parser = Parser::new(tokens);
+    parser.skip_semis();
+    if parser.is_done() {
+        return Err(ParseError::EmptyCommand);
+    }
     let expr = parser.parse_list()?;
+    parser.skip_semis();
     if !parser.is_done() {
         return Err(ParseError::UnexpectedToken(parser.peek().clone()));
     }
@@ -64,6 +71,23 @@ impl Parser {
         matches!(self.peek(), Token::Eof)
     }
 
+    fn skip_semis(&mut self) {
+        while matches!(self.peek(), Token::Semi) {
+            self.advance();
+        }
+    }
+
+    fn peek_keyword(&self) -> Option<&str> {
+        if let Token::Word(w) = self.peek() {
+            if w.0.len() == 1 {
+                if let ast::WordPart::Literal(ref s) = w.0[0] {
+                    return Some(s);
+                }
+            }
+        }
+        None
+    }
+
     fn expect_word(&mut self) -> ParseResult<Word> {
         match self.advance().clone() {
             Token::Word(parts) => Ok(parts),
@@ -74,6 +98,16 @@ impl Parser {
 
     /// list = pipeline ( ('&&'|'||'|';'|'&') pipeline )*
     fn parse_list(&mut self) -> ParseResult<Expr> {
+        self.skip_semis();
+        if self.is_done() {
+            return Err(ParseError::UnexpectedEof);
+        }
+
+        let kw = self.peek_keyword();
+        if matches!(kw, Some("then") | Some("elif") | Some("else") | Some("fi")) {
+            return Err(ParseError::UnexpectedToken(self.peek().clone()));
+        }
+
         let mut left = self.parse_pipeline()?;
 
         loop {
@@ -95,15 +129,18 @@ impl Parser {
                     };
                 }
                 Token::Semi => {
-                    self.advance();
+                    self.skip_semis();
                     if self.is_done()
                         || matches!(
                             self.peek(),
-                            Token::RParen | Token::And | Token::Or | Token::Semi
+                            Token::RParen | Token::And | Token::Or
+                        )
+                        || matches!(
+                            self.peek_keyword(),
+                            Some("then") | Some("elif") | Some("else") | Some("fi")
                         )
                     {
-                        // trailing semicolon — wrap as sequence with no RHS
-                        // just return left as-is (bash behaviour)
+                        // trailing semicolon/newline
                         break;
                     }
                     let right = self.parse_pipeline()?;
@@ -175,10 +212,13 @@ impl Parser {
         Ok(cmd)
     }
 
-    /// command = subshell | simple_command
+    /// command = subshell | if_command | simple_command
     fn parse_command(&mut self) -> ParseResult<Expr> {
         if matches!(self.peek(), Token::LParen) {
             return self.parse_subshell();
+        }
+        if self.peek_keyword() == Some("if") {
+            return self.parse_if();
         }
         self.parse_simple_command()
     }
@@ -194,6 +234,67 @@ impl Parser {
         }
         Ok(Expr::Subshell {
             expr: Box::new(inner),
+        })
+    }
+
+    fn parse_if(&mut self) -> ParseResult<Expr> {
+        // consume "if"
+        self.advance();
+        self.skip_semis();
+
+        let condition = self.parse_list()?;
+
+        self.skip_semis();
+        if self.peek_keyword() != Some("then") {
+            return Err(ParseError::UnmatchedString("then".to_string()));
+        }
+        self.advance(); // consume "then"
+        self.skip_semis();
+
+        let then_branch = self.parse_list()?;
+
+        let mut elifs = Vec::new();
+        let mut else_branch = None;
+
+        loop {
+            self.skip_semis();
+            let kw = self.peek_keyword();
+            match kw {
+                Some("elif") => {
+                    self.advance();
+                    self.skip_semis();
+                    let elif_cond = self.parse_list()?;
+                    self.skip_semis();
+                    if self.peek_keyword() != Some("then") {
+                        return Err(ParseError::UnmatchedString("then".to_string()));
+                    }
+                    self.advance();
+                    self.skip_semis();
+                    let elif_body = self.parse_list()?;
+                    elifs.push((elif_cond, elif_body));
+                }
+                Some("else") => {
+                    self.advance();
+                    self.skip_semis();
+                    else_branch = Some(Box::new(self.parse_list()?));
+                    self.skip_semis();
+                    break;
+                }
+                Some("fi") => break,
+                _ => return Err(ParseError::UnmatchedString("fi".to_string())),
+            }
+        }
+
+        if self.peek_keyword() != Some("fi") {
+            return Err(ParseError::UnmatchedString("fi".to_string()));
+        }
+        self.advance(); // consume "fi"
+
+        Ok(Expr::If {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            elifs,
+            else_branch,
         })
     }
 
@@ -221,7 +322,10 @@ impl Parser {
         }
 
         if words.is_empty() {
-            return Err(ParseError::EmptyCommand);
+            if self.is_done() {
+                return Err(ParseError::UnexpectedEof);
+            }
+            return Err(ParseError::UnexpectedToken(self.peek().clone()));
         }
 
         let name = words.remove(0);

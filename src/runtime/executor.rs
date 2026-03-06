@@ -207,6 +207,48 @@ impl Executor {
                 self.ctx.allowed_bins = saved_allowed;
                 result
             }
+
+            Expr::If {
+                condition,
+                then_branch,
+                elifs,
+                else_branch,
+            } => {
+                let cond_out = self.eval(condition, stdin)?;
+                if !cond_out.stdout.is_empty() {
+                    print!("{}", cond_out.stdout);
+                }
+                if !cond_out.stderr.is_empty() {
+                    eprint!("{}", cond_out.stderr);
+                }
+
+                if cond_out.is_success() {
+                    return self.eval(then_branch, stdin);
+                }
+
+                for (elif_cond, elif_body) in elifs {
+                    let elif_out = self.eval(elif_cond, stdin)?;
+                    if !elif_out.stdout.is_empty() {
+                        print!("{}", elif_out.stdout);
+                    }
+                    if !elif_out.stderr.is_empty() {
+                        eprint!("{}", elif_out.stderr);
+                    }
+                    if elif_out.is_success() {
+                        return self.eval(elif_body, stdin);
+                    }
+                }
+
+                if let Some(else_b) = else_branch {
+                    return self.eval(else_b, stdin);
+                }
+
+                Ok(Output {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                })
+            }
         }
     }
 
@@ -479,6 +521,37 @@ mod tests {
     fn test_unknown_command() {
         let out = exec("nonexistent_cmd");
         assert_eq!(out.exit_code, 127);
+    }
+
+    #[test]
+    fn test_if_true() {
+        let out = exec("if true; then echo a; fi");
+        assert_eq!(out.stdout, "a\n");
+    }
+
+    #[test]
+    fn test_if_false_no_else() {
+        let out = exec("if false; then echo a; fi");
+        assert_eq!(out.stdout, "");
+        assert!(out.is_success()); // bash if returns 0 if no branch is taken
+    }
+
+    #[test]
+    fn test_if_else() {
+        let out = exec("if false; then echo a; else echo b; fi");
+        assert_eq!(out.stdout, "b\n");
+    }
+
+    #[test]
+    fn test_if_elif_else() {
+        let out = exec("if false; then echo a; elif true; then echo b; else echo c; fi");
+        assert_eq!(out.stdout, "b\n");
+    }
+
+    #[test]
+    fn test_if_multiline() {
+        let out = exec("if false\nthen\necho a\nelif false\nthen\necho b\nelse\necho c\nfi");
+        assert_eq!(out.stdout, "c\n");
     }
 
     #[test]
