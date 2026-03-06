@@ -534,10 +534,7 @@ fn run_repl(executor: &mut Executor, username: &str, opts: &ShellOpts) -> Result
         let cwd = executor.cwd().to_string();
         let sigil = if username == "root" { "#" } else { "$" };
         // \x01 / \x02 = RL_PROMPT_START/END_IGNORE so rustyline counts width correctly.
-        let prompt = format!(
-            "\x01\x1b[1;32m\x02{}@nash\x01\x1b[0m\x02:\x01\x1b[1;34m\x02{}\x01\x1b[0m\x02{} ",
-            username, cwd, sigil
-        );
+        let prompt = format!("{}@nash:{}{} ", username, cwd, sigil);
 
         match rl.readline(&prompt) {
             Ok(line) => {
