@@ -550,7 +550,8 @@ impl CommandBuffer {
             }
             Err(crate::parser::ParseError::UnexpectedEof)
             | Err(crate::parser::ParseError::Unmatched(_))
-            | Err(crate::parser::ParseError::UnmatchedString(_)) => {
+            | Err(crate::parser::ParseError::UnmatchedString(_))
+            | Err(crate::parser::ParseError::Expected(_)) => {
                 // Need more input
                 Ok(NeedsMore::Yes)
             }
@@ -572,11 +573,6 @@ impl CommandBuffer {
 
 /// Execute a single command string completely (e.g. `nash -c "cmd"`).
 pub fn run_line_opts(executor: &mut Executor, line: &str, opts: &ShellOpts) -> Result<()> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') {
-        return Ok(());
-    }
-
     if opts.verbose {
         eprintln!("{}", line);
     }

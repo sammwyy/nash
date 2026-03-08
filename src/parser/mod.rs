@@ -250,6 +250,9 @@ impl Parser {
         let condition = self.parse_list()?;
 
         self.skip_semis();
+        if self.is_done() {
+            return Err(ParseError::UnexpectedEof);
+        }
         if self.peek_keyword() != Some("then") {
             return Err(ParseError::Expected("then"));
         }
@@ -270,6 +273,9 @@ impl Parser {
                     self.skip_semis();
                     let elif_cond = self.parse_list()?;
                     self.skip_semis();
+                    if self.is_done() {
+                        return Err(ParseError::UnexpectedEof);
+                    }
                     if self.peek_keyword() != Some("then") {
                         return Err(ParseError::Expected("then"));
                     }
@@ -286,10 +292,18 @@ impl Parser {
                     break;
                 }
                 Some("fi") => break,
-                _ => return Err(ParseError::Expected("fi")),
+                _ => {
+                    if self.is_done() {
+                        return Err(ParseError::UnexpectedEof);
+                    }
+                    return Err(ParseError::Expected("fi"));
+                }
             }
         }
 
+        if self.is_done() {
+            return Err(ParseError::UnexpectedEof);
+        }
         if self.peek_keyword() != Some("fi") {
             return Err(ParseError::Expected("fi"));
         }
