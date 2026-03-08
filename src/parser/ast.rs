@@ -54,4 +54,12 @@ pub enum Expr {
 
     /// `( expr )` — subshell grouping
     Subshell { expr: Box<Expr> },
+
+    /// `if condition; then body; elif condition; then body; else body; fi`
+    If {
+        condition: Box<Expr>,
+        then_branch: Box<Expr>,
+        elifs: Vec<(Expr, Expr)>,
+        else_branch: Option<Box<Expr>>,
+    },
 }

@@ -207,6 +207,65 @@ impl Executor {
                 self.ctx.allowed_bins = saved_allowed;
                 result
             }
+
+            Expr::If {
+                condition,
+                then_branch,
+                elifs,
+                else_branch,
+            } => {
+                let mut out_stdout = String::new();
+                let mut out_stderr = String::new();
+
+                let cond_out = self.eval(condition, stdin)?;
+                out_stdout.push_str(&cond_out.stdout);
+                out_stderr.push_str(&cond_out.stderr);
+
+                if cond_out.is_success() {
+                    let branch_out = self.eval(then_branch, stdin)?;
+                    out_stdout.push_str(&branch_out.stdout);
+                    out_stderr.push_str(&branch_out.stderr);
+                    return Ok(Output {
+                        stdout: out_stdout,
+                        stderr: out_stderr,
+                        exit_code: branch_out.exit_code,
+                    });
+                }
+
+                for (elif_cond, elif_body) in elifs {
+                    let elif_out = self.eval(elif_cond, stdin)?;
+                    out_stdout.push_str(&elif_out.stdout);
+                    out_stderr.push_str(&elif_out.stderr);
+
+                    if elif_out.is_success() {
+                        let branch_out = self.eval(elif_body, stdin)?;
+                        out_stdout.push_str(&branch_out.stdout);
+                        out_stderr.push_str(&branch_out.stderr);
+                        return Ok(Output {
+                            stdout: out_stdout,
+                            stderr: out_stderr,
+                            exit_code: branch_out.exit_code,
+                        });
+                    }
+                }
+
+                if let Some(else_b) = else_branch {
+                    let else_out = self.eval(else_b, stdin)?;
+                    out_stdout.push_str(&else_out.stdout);
+                    out_stderr.push_str(&else_out.stderr);
+                    return Ok(Output {
+                        stdout: out_stdout,
+                        stderr: out_stderr,
+                        exit_code: else_out.exit_code,
+                    });
+                }
+
+                Ok(Output {
+                    stdout: out_stdout,
+                    stderr: out_stderr,
+                    exit_code: 0,
+                })
+            }
         }
     }
 
@@ -479,6 +538,37 @@ mod tests {
     fn test_unknown_command() {
         let out = exec("nonexistent_cmd");
         assert_eq!(out.exit_code, 127);
+    }
+
+    #[test]
+    fn test_if_true() {
+        let out = exec("if true; then echo a; fi");
+        assert_eq!(out.stdout, "a\n");
+    }
+
+    #[test]
+    fn test_if_false_no_else() {
+        let out = exec("if false; then echo a; fi");
+        assert_eq!(out.stdout, "");
+        assert!(out.is_success()); // bash if returns 0 if no branch is taken
+    }
+
+    #[test]
+    fn test_if_else() {
+        let out = exec("if false; then echo a; else echo b; fi");
+        assert_eq!(out.stdout, "b\n");
+    }
+
+    #[test]
+    fn test_if_elif_else() {
+        let out = exec("if false; then echo a; elif true; then echo b; else echo c; fi");
+        assert_eq!(out.stdout, "b\n");
+    }
+
+    #[test]
+    fn test_if_multiline() {
+        let out = exec("if false\nthen\necho a\nelif false\nthen\necho b\nelse\necho c\nfi");
+        assert_eq!(out.stdout, "c\n");
     }
 
     #[test]
