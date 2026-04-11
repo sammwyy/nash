@@ -1,61 +1,57 @@
-use super::Builtin;
-use crate::runtime::{Context, Output};
+use crate::runtime::context::Context;
+use shellframe::Output;
 use crate::vfs::path::VfsPath;
 use anyhow::{bail, Result};
 
-pub struct Jq;
+pub fn run(args: &[String], ctx: &mut Context, stdin: &str) -> Result<Output> {
+    let mut compact = false;
+    let mut raw_output = false;
+    let mut filter = ".".to_string();
+    let mut files: Vec<String> = Vec::new();
+    let mut null_input = false;
 
-impl Builtin for Jq {
-    fn run(&self, args: &[String], ctx: &mut Context, stdin: &str) -> Result<Output> {
-        let mut compact = false;
-        let mut raw_output = false;
-        let mut filter = ".".to_string();
-        let mut files: Vec<String> = Vec::new();
-        let mut null_input = false;
-
-        let mut iter = args.iter();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "-c" => compact = true,
-                "-r" => raw_output = true,
-                "-n" => null_input = true,
-                s if s.starts_with('-') => {}
-                _ => {
-                    if filter == "." && files.is_empty() {
-                        filter = arg.clone();
-                    } else {
-                        files.push(arg.clone());
-                    }
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-c" => compact = true,
+            "-r" => raw_output = true,
+            "-n" => null_input = true,
+            s if s.starts_with('-') => {}
+            _ => {
+                if filter == "." && files.is_empty() {
+                    filter = arg.clone();
+                } else {
+                    files.push(arg.clone());
                 }
             }
         }
-
-        let text = if null_input {
-            "null".to_string()
-        } else if files.is_empty() {
-            stdin.to_string()
-        } else {
-            let mut buf = String::new();
-            for f in &files {
-                let abs = VfsPath::join(&ctx.cwd, f);
-                buf.push_str(&ctx.vfs.read_to_string(&abs)?);
-            }
-            buf
-        };
-
-        let value =
-            parse_json(text.trim()).map_err(|e| anyhow::anyhow!("jq: invalid JSON: {}", e))?;
-
-        let result = apply_filter(&value, &filter).map_err(|e| anyhow::anyhow!("jq: {}", e))?;
-
-        let out = if compact {
-            format!("{}\n", json_to_string_compact(&result, raw_output))
-        } else {
-            format!("{}\n", json_to_string_pretty(&result, 0, raw_output))
-        };
-
-        Ok(Output::success(out))
     }
+
+    let text = if null_input {
+        "null".to_string()
+    } else if files.is_empty() {
+        stdin.to_string()
+    } else {
+        let mut buf = String::new();
+        for f in &files {
+            let abs = VfsPath::join(ctx.get_cwd(), f);
+            buf.push_str(&ctx.state.vfs.read_to_string(&abs)?);
+        }
+        buf
+    };
+
+    let value =
+        parse_json(text.trim()).map_err(|e| anyhow::anyhow!("jq: invalid JSON: {}", e))?;
+
+    let result = apply_filter(&value, &filter).map_err(|e| anyhow::anyhow!("jq: {}", e))?;
+
+    let out = if compact {
+        format!("{}\n", json_to_string_compact(&result, raw_output))
+    } else {
+        format!("{}\n", json_to_string_pretty(&result, 0, raw_output))
+    };
+
+    Ok(Output::success(out))
 }
 
 // ─── Minimal JSON value type ──────────────────────────────────────────────────

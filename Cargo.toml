@@ -11,6 +11,7 @@ name = "nash"
 path = "src/main.rs"
 
 [dependencies]
+shellframe = { git = "https://github.com/sammwyy/shellframe" }
 # REPL / terminal handling
 rustyline = "14.0"
 # Error handling
@@ -20,6 +21,7 @@ anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 # Ordered maps for env vars
 indexmap = "2.0"
+
 
 [dev-dependencies]
 pretty_assertions = "1.4"

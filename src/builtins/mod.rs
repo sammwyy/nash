@@ -1,8 +1,3 @@
-//! # Built-in Commands
-//!
-//! All commands operate exclusively through the VFS API.
-//! No system binaries are ever invoked.
-
 mod cat;
 mod cd;
 mod clear;
@@ -32,50 +27,43 @@ mod util;
 mod wc;
 mod which;
 
-use crate::runtime::{Context, Output};
+use crate::runtime::context::{NashState, Context};
+use shellframe::{Shell, Output};
 use anyhow::Result;
 
-/// Trait that every built-in command must implement.
-pub trait Builtin {
-    fn run(&self, args: &[String], ctx: &mut Context, stdin: &str) -> Result<Output>;
-}
-
-/// Dispatch a command name to its builtin implementation, if one exists.
-pub fn dispatch(name: &str) -> Option<Box<dyn Builtin>> {
-    match name {
-        "cat" => Some(Box::new(cat::Cat)),
-        "cd" => Some(Box::new(cd::Cd)),
-        "clear" => Some(Box::new(clear::Clear)),
-        "cp" => Some(Box::new(cp::Cp)),
-        "cut" => Some(Box::new(cut::Cut)),
-        "echo" => Some(Box::new(echo::Echo)),
-        "env" => Some(Box::new(env::EnvCmd)),
-        "export" => Some(Box::new(env::Export)),
-        "unset" => Some(Box::new(env::Unset)),
-        "file" => Some(Box::new(file::FileCmd)),
-        "find" => Some(Box::new(find::Find)),
-        "grep" => Some(Box::new(grep::Grep)),
-        "head" => Some(Box::new(head_tail::Head)),
-        "tail" => Some(Box::new(head_tail::Tail)),
-        "help" => Some(Box::new(help::Help)),
-        "history" => Some(Box::new(history::History)),
-        "jq" => Some(Box::new(jq::Jq)),
-        "ls" => Some(Box::new(ls::Ls)),
-        "mkdir" => Some(Box::new(mkdir::Mkdir)),
-        "mv" => Some(Box::new(mv::Mv)),
-        "pwd" => Some(Box::new(pwd::Pwd)),
-        "rm" => Some(Box::new(rm::Rm)),
-        "sed" => Some(Box::new(sed::Sed)),
-        "sort" => Some(Box::new(sort::Sort)),
-        "stat" => Some(Box::new(stat::Stat)),
-        "touch" => Some(Box::new(touch::Touch)),
-        "tree" => Some(Box::new(tree::Tree)),
-        "true" => Some(Box::new(util::True)),
-        "false" => Some(Box::new(util::False)),
-        "test" | "[" => Some(Box::new(util::Test)),
-        "uniq" => Some(Box::new(uniq::Uniq)),
-        "wc" => Some(Box::new(wc::Wc)),
-        "which" => Some(Box::new(which::Which)),
-        _ => None,
-    }
+pub fn register_all(shell: &mut Shell<NashState>) {
+    shell.register_builtin("cat", cat::run);
+    shell.register_builtin("cd", cd::run);
+    shell.register_builtin("clear", clear::run);
+    shell.register_builtin("cp", cp::run);
+    shell.register_builtin("cut", cut::run);
+    shell.register_builtin("echo", echo::run);
+    shell.register_builtin("env", env::run_env);
+    shell.register_builtin("export", env::run_export);
+    shell.register_builtin("unset", env::run_unset);
+    shell.register_builtin("file", file::run);
+    shell.register_builtin("find", find::run);
+    shell.register_builtin("grep", grep::run);
+    shell.register_builtin("head", head_tail::run_head);
+    shell.register_builtin("tail", head_tail::run_tail);
+    shell.register_builtin("help", help::run);
+    shell.register_builtin("history", history::run);
+    shell.register_builtin("jq", jq::run);
+    shell.register_builtin("ls", ls::run);
+    shell.register_builtin("mkdir", mkdir::run);
+    shell.register_builtin("mv", mv::run);
+    shell.register_builtin("pwd", pwd::run);
+    shell.register_builtin("rm", rm::run);
+    shell.register_builtin("sed", sed::run);
+    shell.register_builtin("sort", sort::run);
+    shell.register_builtin("stat", stat::run);
+    shell.register_builtin("touch", touch::run);
+    shell.register_builtin("tree", tree::run);
+    shell.register_builtin("true", util::run_true);
+    shell.register_builtin("false", util::run_false);
+    shell.register_builtin("test", util::run_test);
+    shell.register_builtin("[", util::run_test);
+    shell.register_builtin("uniq", uniq::run);
+    shell.register_builtin("wc", wc::run);
+    shell.register_builtin("which", which::run);
 }

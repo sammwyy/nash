@@ -1,8 +1,6 @@
-use super::Builtin;
-use crate::runtime::{Context, Output};
+use crate::runtime::context::Context;
+use shellframe::Output;
 use anyhow::Result;
-
-pub struct Help;
 
 const HELP_TEXT: &str = r#"Nash — Not A Shell  |  Sandboxed bash-like interpreter
 
@@ -72,8 +70,6 @@ SYNTAX
 Type 'exit' or press Ctrl-D to quit.
 "#;
 
-impl Builtin for Help {
-    fn run(&self, _args: &[String], _ctx: &mut Context, _stdin: &str) -> Result<Output> {
-        Ok(Output::success(HELP_TEXT))
-    }
+pub fn run(_args: &[String], _ctx: &mut Context, _stdin: &str) -> Result<Output> {
+    Ok(Output::success(HELP_TEXT.into()))
 }

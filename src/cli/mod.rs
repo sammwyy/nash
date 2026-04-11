@@ -4,8 +4,8 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::io::{self, BufRead, IsTerminal};
 
-use crate::parser::parse;
-use crate::runtime::{Executor, ExecutorConfig};
+use shellframe::parser::parse;
+use crate::runtime::executor::{Executor, ExecutorConfig};
 use crate::vfs::mount::MountOptions;
 
 /// Nash — Not A Shell: a sandboxed bash-like command interpreter.

@@ -1,6 +1,6 @@
 mod builtins;
 mod cli;
-mod parser;
+
 mod runtime;
 mod vfs;
 

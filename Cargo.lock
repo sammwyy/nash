@@ -246,6 +246,7 @@ dependencies = [
  "indexmap",
  "pretty_assertions",
  "rustyline",
+ "shellframe",
  "thiserror",
 ]
 
@@ -347,6 +348,17 @@ dependencies = [
  "unicode-width",
  "utf8parse",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "shellframe"
+version = "0.1.0"
+source = "git+https://github.com/sammwyy/shellframe#7fafffbd72e84e609db165984608b9cd0a11c41a"
+dependencies = [
+ "anyhow",
+ "indexmap",
+ "rustyline",
+ "thiserror",
 ]
 
 [[package]]

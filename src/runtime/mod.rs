@@ -1,12 +1,6 @@
-//! # Sandbox Runtime
-//!
-//! Executes a Nash AST in a fully sandboxed environment.
-//! No system binaries are ever called; everything runs through VFS and builtins.
+pub mod context;
+pub mod executor;
 
-mod context;
-mod executor;
-mod output;
+use shellframe::Output as ShellOutput;
 
-pub use context::Context;
-pub use executor::{Executor, ExecutorConfig};
-pub use output::Output;
+pub type Output = ShellOutput;

@@ -1,68 +1,58 @@
-use super::Builtin;
-use crate::runtime::{Context, Output};
+use crate::runtime::context::Context;
+use shellframe::Output;
 use crate::vfs::path::VfsPath;
 use anyhow::{bail, Result};
 
-pub struct Sed;
+pub fn run(args: &[String], ctx: &mut Context, stdin: &str) -> Result<Output> {
+    let mut script: Option<String> = None;
+    let mut silent = false;
+    let mut files: Vec<String> = Vec::new();
 
-impl Builtin for Sed {
-    fn run(&self, args: &[String], ctx: &mut Context, stdin: &str) -> Result<Output> {
-        // Supported: sed 's/old/new/[g]' [file...]
-        //            sed -n 's/old/new/p' [file...]  (print only matching)
-        //            sed 'Nd'                         (delete line N)
-        //            sed 'Np'                         (print line N)
-        let mut script: Option<String> = None;
-        let mut silent = false;
-        let mut files: Vec<String> = Vec::new();
-
-        let mut iter = args.iter();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "-n" => silent = true,
-                "-e" => {
-                    script = iter.next().cloned();
-                }
-                s if s.starts_with('-') => {}
-                _ => {
-                    if script.is_none() {
-                        script = Some(arg.clone());
-                    } else {
-                        files.push(arg.clone());
-                    }
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-n" => silent = true,
+            "-e" => {
+                script = iter.next().cloned();
+            }
+            s if s.starts_with('-') => {}
+            _ => {
+                if script.is_none() {
+                    script = Some(arg.clone());
+                } else {
+                    files.push(arg.clone());
                 }
             }
         }
-
-        let expr = match script {
-            Some(s) => s,
-            None => bail!("sed: no script specified"),
-        };
-
-        let text = if files.is_empty() {
-            stdin.to_string()
-        } else {
-            let mut buf = String::new();
-            for f in &files {
-                let abs = VfsPath::join(&ctx.cwd, f);
-                buf.push_str(&ctx.vfs.read_to_string(&abs)?);
-            }
-            buf
-        };
-
-        let out = apply_sed(&expr, &text, silent)?;
-        Ok(Output::success(out))
     }
+
+    let expr = match script {
+        Some(s) => s,
+        None => bail!("sed: no script specified"),
+    };
+
+    let text = if files.is_empty() {
+        stdin.to_string()
+    } else {
+        let mut buf = String::new();
+        for f in &files {
+            let abs = VfsPath::join(ctx.get_cwd(), f);
+            buf.push_str(&ctx.state.vfs.read_to_string(&abs)?);
+        }
+        buf
+    };
+
+    let out = apply_sed(&expr, &text, silent)?;
+    Ok(Output::success(out))
 }
 
 fn apply_sed(expr: &str, text: &str, silent: bool) -> Result<String> {
     let mut out = String::new();
 
-    // Bare 'd' — delete all lines
     if expr.trim() == "d" {
         return Ok(String::new());
     }
 
-    // s/old/new/[flags]
     if expr.starts_with('s') && expr.len() > 1 {
         let delim = expr.chars().nth(1).unwrap_or('/');
         let parts: Vec<&str> = expr[2..].splitn(3, delim).collect();
@@ -106,7 +96,6 @@ fn apply_sed(expr: &str, text: &str, silent: bool) -> Result<String> {
         return Ok(out);
     }
 
-    // Nd — delete line N
     if let Some(stripped) = expr.strip_suffix('d') {
         if let Ok(n) = stripped.trim().parse::<usize>() {
             for (i, line) in text.lines().enumerate() {
@@ -119,7 +108,6 @@ fn apply_sed(expr: &str, text: &str, silent: bool) -> Result<String> {
         }
     }
 
-    // Np — print line N
     if let Some(stripped) = expr.strip_suffix('p') {
         if let Ok(n) = stripped.trim().parse::<usize>() {
             for (i, line) in text.lines().enumerate() {

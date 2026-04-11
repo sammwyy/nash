@@ -1,58 +1,54 @@
-use super::Builtin;
-use crate::runtime::{Context, Output};
+use crate::runtime::context::Context;
+use shellframe::Output;
 use crate::vfs::path::VfsPath;
 use anyhow::Result;
 
-pub struct Tree;
+pub fn run(args: &[String], ctx: &mut Context, _stdin: &str) -> Result<Output> {
+    let mut max_depth: Option<usize> = None;
+    let mut show_hidden = false;
+    let mut start = ctx.get_cwd().to_string();
 
-impl Builtin for Tree {
-    fn run(&self, args: &[String], ctx: &mut Context, _stdin: &str) -> Result<Output> {
-        let mut max_depth: Option<usize> = None;
-        let mut show_hidden = false;
-        let mut start = ctx.cwd.clone();
-
-        let mut iter = args.iter().peekable();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "-L" => {
-                    max_depth = iter.next().and_then(|s| s.parse().ok());
-                }
-                "-a" => show_hidden = true,
-                s if s.starts_with('-') => {}
-                _ => start = VfsPath::join(&ctx.cwd, arg),
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-L" => {
+                max_depth = iter.next().and_then(|s| s.parse().ok());
             }
+            "-a" => show_hidden = true,
+            s if s.starts_with('-') => {}
+            _ => start = VfsPath::join(ctx.get_cwd(), arg),
         }
-
-        let mut out = String::new();
-        out.push_str(&start);
-        out.push('\n');
-
-        let mut dirs = 0usize;
-        let mut files_count = 0usize;
-
-        tree_recursive(
-            &ctx.vfs,
-            &start,
-            "",
-            max_depth,
-            0,
-            show_hidden,
-            &mut out,
-            &mut dirs,
-            &mut files_count,
-        );
-
-        out.push('\n');
-        out.push_str(&format!(
-            "{} director{}, {} file{}\n",
-            dirs,
-            if dirs == 1 { "y" } else { "ies" },
-            files_count,
-            if files_count == 1 { "" } else { "s" }
-        ));
-
-        Ok(Output::success(out))
     }
+
+    let mut out = String::new();
+    out.push_str(&start);
+    out.push('\n');
+
+    let mut dirs = 0usize;
+    let mut files_count = 0usize;
+
+    tree_recursive(
+        &ctx.state.vfs,
+        &start,
+        "",
+        max_depth,
+        0,
+        show_hidden,
+        &mut out,
+        &mut dirs,
+        &mut files_count,
+    );
+
+    out.push('\n');
+    out.push_str(&format!(
+        "{} director{}, {} file{}\n",
+        dirs,
+        if dirs == 1 { "y" } else { "ies" },
+        files_count,
+        if files_count == 1 { "" } else { "s" }
+    ));
+
+    Ok(Output::success(out))
 }
 
 fn tree_recursive(
